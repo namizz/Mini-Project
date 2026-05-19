@@ -26,13 +26,17 @@ const router = Router();
  *             properties:
  *               email:
  *                 type: string
+ *                 example: author@afrolink.com
  *               name:
  *                 type: string
+ *                 example: Naomi Zerfu
  *               password:
  *                 type: string
+ *                 example: 1@Nami@1234
  *               role:
  *                 type: string
  *                 enum: [AUTHOR, READER]
+ *                 example: AUTHOR
  *     responses:
  *       201:
  *         description: User created successfully
@@ -65,8 +69,10 @@ router.post('/signup', signup);
  *             properties:
  *               email:
  *                 type: string
+ *                 example: author@afrolink.com
  *               password:
  *                 type: string
+ *                 example: 1@Nami@1234
  *     responses:
  *       200:
  *         description: Login successful, returns JWT token

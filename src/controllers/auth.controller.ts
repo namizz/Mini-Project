@@ -42,12 +42,41 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       },
     });
 
-    res.status(201).json(BaseResponse.success({ id: user.id, email: user.email, role: user.role }));
+    // Generate Access Token (15 minutes)
+    const accessToken = jwt.sign({ sub: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '15m' });
+
+    // Generate Refresh Token (7 days)
+    const refreshTokenString = crypto.randomBytes(40).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshTokenString,
+        userId: user.id,
+        expiresAt,
+      },
+    });
+
+    res.cookie('refreshToken', refreshTokenString, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.status(201).json(BaseResponse.success({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      accessToken,
+      refreshToken: refreshTokenString
+    }));
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       res.status(400).json(BaseResponse.error('Validation Error', error.issues));
       return;
     }
+    console.error('Signup Error:', error);
     res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
@@ -90,7 +119,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    res.json(BaseResponse.success({ accessToken }));
+    res.json(BaseResponse.success({ accessToken, refreshToken: refreshTokenString }));
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       res.status(400).json(BaseResponse.error('Validation Error', error.issues));
@@ -140,7 +169,7 @@ export const refresh = async (req: Request, res: Response): Promise<void> => {
       maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
-    res.json(BaseResponse.success({ accessToken }));
+    res.json(BaseResponse.success({ accessToken, refreshToken: newRefreshTokenString }));
   } catch (error: any) {
     res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
