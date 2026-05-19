@@ -1,6 +1,6 @@
 # Article Analytics API
 
-A robust, scalable RESTful API built for managing and tracking article analytics. This project implements a role-based access control (RBAC) system for Authors and Readers, complete with view tracking and analytics debouncing purely driven by PostgreSQL.
+A robust, scalable RESTful API built for managing and tracking article analytics. This project implements a role-based access control (RBAC) system for Authors and Readers, complete with view tracking and a secure Refresh Token architecture, powered entirely by PostgreSQL (no Redis required).
 
 ## Tech Stack
 - **Runtime:** Node.js
@@ -9,15 +9,16 @@ A robust, scalable RESTful API built for managing and tracking article analytics
 - **Database:** PostgreSQL
 - **ORM:** Prisma
 - **Validation:** Zod
-- **Authentication:** JWT (JSON Web Tokens) & bcrypt
+- **Authentication:** Short-Lived JWT Access Tokens & Long-Lived HttpOnly Refresh Tokens
 - **Documentation:** Swagger UI
 
 ## Features
-- **Identity Management:** Role-based access control (`AUTHOR` vs `READER`).
-- **Article Workflows:** Full CRUD operations for authors (including soft-deleting).
-- **Public Feed:** Open access to published articles.
-- **Analytics Engine:** Automatically tracks and aggregates unique views/reads per article.
-- **Rate Limiting:** Debounces read events to prevent spamming (max 1 log per 10 seconds per IP), backed entirely by PostgreSQL.
+- **Identity Management:** Role-based access control (`AUTHOR` vs `READER`) with strict password policies.
+- **Refresh Token Architecture:** Seamless `/auth/refresh` endpoint that rotates tokens securely using cookies without exposing long-lived credentials.
+- **Article Workflows:** Full CRUD operations for authors, strict visibility filters, and Prisma client extensions for soft-deleting.
+- **Public Feed:** Open access to published articles with powerful search filters (category, author, keywords).
+- **Analytics Engine:** Automatically tracks unique reads (via JWT) and aggregates them into daily metrics natively in a non-blocking PostgreSQL transaction.
+- **Strict Compliance:** Standardized responses (`{ Success, Message, Object, Errors }`), Pagination, and UUID primary keys across the board.
 
 ## Setup Instructions
 
@@ -35,9 +36,9 @@ A robust, scalable RESTful API built for managing and tracking article analytics
    ```
 
 3. **Database Migration:**
-   Apply the Prisma schema to your local PostgreSQL database:
+   Because this project uses UUIDs and Refresh Tokens, start by resetting and migrating your database cleanly:
    ```bash
-   npx prisma migrate dev --name init
+   npx prisma migrate reset --force
    ```
 
 4. **Run the Development Server:**

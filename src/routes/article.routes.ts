@@ -133,17 +133,23 @@ router.get('/me/dashboard', requireRole(['AUTHOR']), getAuthorDashboard);
  *     requestBody:
  *       required: true
  *       content:
- *         application/x-www-form-urlencoded:
+ *         application/json:
  *           schema:
  *             type: object
  *             properties:
  *               title:
  *                 type: string
+ *                 example: The Future of TypeScript
  *               content:
  *                 type: string
+ *                 example: TypeScript is evolving rapidly, bringing new features that make building robust applications easier than ever. In this comprehensive guide, we will explore the latest advancements...
+ *               category:
+ *                 type: string
+ *                 example: Technology
  *               status:
  *                 type: string
  *                 enum: [DRAFT, PUBLISHED]
+ *                 example: PUBLISHED
  *     responses:
  *       201:
  *         description: Article created
@@ -181,17 +187,23 @@ router.post('/', requireRole(['AUTHOR']), createArticle);
  *     requestBody:
  *       required: true
  *       content:
- *         application/x-www-form-urlencoded:
+ *         application/json:
  *           schema:
  *             type: object
  *             properties:
  *               title:
  *                 type: string
+ *                 example: The Future of TypeScript
  *               content:
  *                 type: string
+ *                 example: TypeScript is evolving rapidly, bringing new features that make building robust applications easier than ever. In this comprehensive guide, we will explore the latest advancements...
+ *               category:
+ *                 type: string
+ *                 example: Technology
  *               status:
  *                 type: string
  *                 enum: [DRAFT, PUBLISHED]
+ *                 example: PUBLISHED
  *     responses:
  *       200:
  *         description: Article updated
