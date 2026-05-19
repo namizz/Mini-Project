@@ -18,21 +18,33 @@ enum ArticleStatus {
 }
 
 model User {
-  id        Int       @id @default(autoincrement())
-  email     String    @unique
-  name      String
-  password  String
-  role      Role      @default(READER)
-  articles  Article[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String
+  password      String
+  role          Role
+  articles      Article[]
+  readLogs      ReadLog[]      @relation("ReaderLogs")
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
 }
 
 model Article {
-  id             Int              @id @default(autoincrement())
+  id             String           @id @default(uuid())
   title          String
   content        String
-  authorId       Int
+  category       String
+  authorId       String
   author         User             @relation(fields: [authorId], references: [id])
   status         ArticleStatus    @default(DRAFT)
   createdAt      DateTime         @default(now())
@@ -43,16 +55,17 @@ model Article {
 }
 
 model ReadLog {
-  id        Int      @id @default(autoincrement())
-  articleId Int
+  id        String   @id @default(uuid())
+  articleId String
   article   Article  @relation(fields: [articleId], references: [id])
+  readerId  String?
+  reader    User?    @relation("ReaderLogs", fields: [readerId], references: [id])
   readAt    DateTime @default(now())
-  ipAddress String?
 }
 
 model DailyAnalytics {
-  id        Int      @id @default(autoincrement())
-  articleId Int
+  id        String   @id @default(uuid())
+  articleId String
   article   Article  @relation(fields: [articleId], references: [id])
   date      DateTime @db.Date
   viewCount Int      @default(0)
