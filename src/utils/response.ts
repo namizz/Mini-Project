@@ -1,38 +1,39 @@
 export class BaseResponse<T> {
-  success: boolean;
-  message: string;
-  data?: T;
-  error?: any;
+  Success: boolean;
+  Message: string;
+  Object?: T;
+  Errors?: any[];
 
-  constructor(success: boolean, message: string, data?: T, error?: any) {
-    this.success = success;
-    this.message = message;
-    this.data = data;
-    this.error = error;
+  constructor(Success: boolean, Message: string, Object?: T, Errors?: any[]) {
+    this.Success = Success;
+    this.Message = Message;
+    this.Object = Object;
+    this.Errors = Errors;
   }
 
-  static success<T>(data: T, message: string = 'Success') {
-    return new BaseResponse<T>(true, message, data);
+  static success<T>(Object: T, Message: string = 'Success') {
+    return new BaseResponse<T>(true, Message, Object);
   }
 
-  static error(message: string, error?: any) {
-    return new BaseResponse<any>(false, message, undefined, error);
+  static error(Message: string, Errors?: any | any[]) {
+    const errorArray = Array.isArray(Errors) ? Errors : (Errors ? [Errors] : undefined);
+    return new BaseResponse<any>(false, Message, undefined, errorArray);
   }
 }
 
 export class PaginatedResponse<T> extends BaseResponse<T[]> {
-  meta: {
-    page: number;
-    limit: number;
-    total: number;
-  };
+  PageNumber: number;
+  PageSize: number;
+  TotalSize: number;
 
-  constructor(success: boolean, message: string, data: T[], meta: { page: number; limit: number; total: number }) {
-    super(success, message, data);
-    this.meta = meta;
+  constructor(Success: boolean, Message: string, Object: T[], PageNumber: number, PageSize: number, TotalSize: number) {
+    super(Success, Message, Object);
+    this.PageNumber = PageNumber;
+    this.PageSize = PageSize;
+    this.TotalSize = TotalSize;
   }
 
-  static paginatedSuccess<T>(data: T[], meta: { page: number; limit: number; total: number }, message: string = 'Success') {
-    return new PaginatedResponse<T>(true, message, data, meta);
+  static paginatedSuccess<T>(Object: T[], PageNumber: number, PageSize: number, TotalSize: number, Message: string = 'Success') {
+    return new PaginatedResponse<T>(true, Message, Object, PageNumber, PageSize, TotalSize);
   }
 }

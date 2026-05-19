@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { signup, login } from '../controllers/auth.controller';
+import { signup, login, refresh, logout } from '../controllers/auth.controller';
 
 const router = Router();
 
@@ -76,5 +76,33 @@ router.post('/signup', signup);
  *         description: Invalid credentials
  */
 router.post('/login', login);
+
+/**
+ * @swagger
+ * /auth/refresh:
+ *   post:
+ *     summary: Refresh access token
+ *     description: Reads HTTP-only cookie and returns a new access token
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Successfully refreshed token
+ *       401:
+ *         description: Invalid or expired refresh token
+ */
+router.post('/refresh', refresh);
+
+/**
+ * @swagger
+ * /auth/logout:
+ *   post:
+ *     summary: Logout user
+ *     description: Clears HTTP-only cookie and revokes refresh token
+ *     tags: [Auth]
+ *     responses:
+ *       200:
+ *         description: Logged out successfully
+ */
+router.post('/logout', logout);
 
 export default router;

@@ -1,22 +1,26 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { prisma } from '../config/prisma';
-import { BaseResponse } from '../utils/response';
+import { BaseResponse, PaginatedResponse } from '../utils/response';
 import { AuthRequest } from '../middlewares/auth.middleware';
+import jwt from 'jsonwebtoken';
+
+const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtkey';
 
 const articleSchema = z.object({
-  title: z.string().min(1),
-  content: z.string().min(1),
+  title: z.string().min(1).max(150),
+  content: z.string().min(50),
+  category: z.string().min(1),
   status: z.enum(['DRAFT', 'PUBLISHED']).optional(),
 });
 
 export const createArticle = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const { title, content, status } = articleSchema.parse(req.body);
+    const { title, content, category, status } = articleSchema.parse(req.body);
     const authorId = req.user!.id;
 
     const article = await prisma.article.create({
-      data: { title, content, status: status || 'DRAFT', authorId },
+      data: { title, content, category, status: status || 'DRAFT', authorId },
     });
 
     res.status(201).json(BaseResponse.success(article));
@@ -25,14 +29,14 @@ export const createArticle = async (req: AuthRequest, res: Response): Promise<vo
       res.status(400).json(BaseResponse.error('Validation Error', error.issues));
       return;
     }
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
 
 export const updateArticle = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const id = parseInt(req.params.id as string);
-    const { title, content, status } = articleSchema.parse(req.body);
+    const id = req.params.id as string;
+    const { title, content, category, status } = articleSchema.parse(req.body);
     const authorId = req.user!.id;
 
     const article = await prisma.article.findUnique({ where: { id } });
@@ -47,7 +51,7 @@ export const updateArticle = async (req: AuthRequest, res: Response): Promise<vo
 
     const updated = await prisma.article.update({
       where: { id },
-      data: { title, content, status },
+      data: { title, content, category, status },
     });
 
     res.json(BaseResponse.success(updated));
@@ -56,13 +60,13 @@ export const updateArticle = async (req: AuthRequest, res: Response): Promise<vo
       res.status(400).json(BaseResponse.error('Validation Error', error.issues));
       return;
     }
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
 
 export const deleteArticle = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
-    const id = parseInt(req.params.id as string);
+    const id = req.params.id as string;
     const authorId = req.user!.id;
 
     const article = await prisma.article.findUnique({ where: { id } });
@@ -82,40 +86,74 @@ export const deleteArticle = async (req: AuthRequest, res: Response): Promise<vo
 
     res.json(BaseResponse.success(deleted, 'Article deleted'));
   } catch (error: any) {
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
 
 export const getMyArticles = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const authorId = req.user!.id;
-    const articles = await prisma.article.findMany({
-      where: { authorId, deletedAt: null },
-    });
-    res.json(BaseResponse.success(articles));
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.size as string) || 10;
+    const skip = (page - 1) * limit;
+
+    const [articles, total] = await Promise.all([
+      prisma.article.findMany({
+        where: { authorId, deletedAt: null },
+        skip,
+        take: limit,
+      }),
+      prisma.article.count({ where: { authorId, deletedAt: null } })
+    ]);
+
+    res.json(PaginatedResponse.paginatedSuccess(articles, page, limit, total));
   } catch (error: any) {
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
 
 export const getPublicArticles = async (req: Request, res: Response): Promise<void> => {
   try {
-    const articles = await prisma.article.findMany({
-      where: { status: 'PUBLISHED', deletedAt: null },
-      include: { author: { select: { id: true, email: true } } },
-    });
-    res.json(BaseResponse.success(articles));
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.size as string) || 10;
+    const skip = (page - 1) * limit;
+
+    const { category, author, q } = req.query;
+
+    const whereClause: any = { status: 'PUBLISHED', deletedAt: null };
+    
+    if (category) {
+      whereClause.category = category as string;
+    }
+    if (author) {
+      whereClause.author = { name: { contains: author as string, mode: 'insensitive' } };
+    }
+    if (q) {
+      whereClause.title = { contains: q as string, mode: 'insensitive' };
+    }
+
+    const [articles, total] = await Promise.all([
+      prisma.article.findMany({
+        where: whereClause,
+        include: { author: { select: { id: true, name: true, email: true } } },
+        skip,
+        take: limit,
+      }),
+      prisma.article.count({ where: whereClause })
+    ]);
+
+    res.json(PaginatedResponse.paginatedSuccess(articles, page, limit, total));
   } catch (error: any) {
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
 
 export const getArticleById = async (req: Request, res: Response): Promise<void> => {
   try {
-    const id = parseInt(req.params.id as string);
+    const id = req.params.id as string;
     const article = await prisma.article.findUnique({
       where: { id },
-      include: { author: { select: { id: true, email: true } } },
+      include: { author: { select: { id: true, name: true, email: true } } },
     });
 
     if (!article || article.deletedAt) {
@@ -127,77 +165,75 @@ export const getArticleById = async (req: Request, res: Response): Promise<void>
       return;
     }
 
-    const ipAddress = req.ip || req.socket.remoteAddress || 'unknown';
-    
-    const tenSecondsAgo = new Date(Date.now() - 10 * 1000);
-    const recentRead = await prisma.readLog.findFirst({
-      where: {
-        articleId: id,
-        ipAddress,
-        readAt: { gte: tenSecondsAgo }
-      }
-    });
-
-    if (!recentRead) {
-      const today = new Date();
-      today.setUTCHours(0, 0, 0, 0);
-
-      prisma.$transaction(async (tx) => {
-        await tx.readLog.create({
-          data: { articleId: id, ipAddress },
-        });
-
-        const existing = await tx.dailyAnalytics.findUnique({
-          where: { articleId_date: { articleId: id, date: today } },
-        });
-
-        if (existing) {
-          await tx.dailyAnalytics.update({
-            where: { id: existing.id },
-            data: { viewCount: existing.viewCount + 1 },
-          });
-        } else {
-          await tx.dailyAnalytics.create({
-            data: { articleId: id, date: today, viewCount: 1 },
-          });
-        }
-      }).catch(err => console.error('Failed to log read:', err));
+    let readerId = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET) as any;
+        readerId = decoded.sub;
+      } catch (e) {}
     }
+
+    // Fire and forget background job directly in Node to avoid blocking response
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    prisma.$transaction(async (tx) => {
+      await tx.readLog.create({
+        data: { articleId: id, readerId },
+      });
+
+      const existing = await tx.dailyAnalytics.findUnique({
+        where: { articleId_date: { articleId: id, date: today } },
+      });
+
+      if (existing) {
+        await tx.dailyAnalytics.update({
+          where: { id: existing.id },
+          data: { viewCount: existing.viewCount + 1 },
+        });
+      } else {
+        await tx.dailyAnalytics.create({
+          data: { articleId: id, date: today, viewCount: 1 },
+        });
+      }
+    }).catch(err => console.error('Failed to log read:', err));
 
     res.json(BaseResponse.success(article));
   } catch (error: any) {
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
 
 export const getAuthorDashboard = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const authorId = req.user!.id;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.size as string) || 10;
+    const skip = (page - 1) * limit;
 
-    const articles = await prisma.article.findMany({
-      where: { authorId, deletedAt: null },
-      include: {
-        dailyAnalytics: true,
-      },
-    });
+    const [articles, total] = await Promise.all([
+      prisma.article.findMany({
+        where: { authorId, deletedAt: null },
+        include: { dailyAnalytics: true },
+        skip,
+        take: limit,
+      }),
+      prisma.article.count({ where: { authorId, deletedAt: null } })
+    ]);
 
-    let totalViews = 0;
     const articlesWithStats = articles.map(article => {
-      const views = article.dailyAnalytics.reduce((sum, current) => sum + current.viewCount, 0);
-      totalViews += views;
+      const totalViews = article.dailyAnalytics.reduce((sum, current) => sum + current.viewCount, 0);
       return {
         id: article.id,
         title: article.title,
-        status: article.status,
-        views,
+        createdAt: article.createdAt,
+        totalViews,
       };
     });
 
-    res.json(BaseResponse.success({
-      totalViews,
-      articles: articlesWithStats,
-    }));
+    res.json(PaginatedResponse.paginatedSuccess(articlesWithStats, page, limit, total));
   } catch (error: any) {
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };

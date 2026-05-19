@@ -4,14 +4,17 @@ import jwt from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma } from '../config/prisma';
 import { BaseResponse } from '../utils/response';
+import crypto from 'crypto';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecretjwtkey';
 
 const signupSchema = z.object({
   email: z.string().email(),
-  name: z.string().min(1),
-  password: z.string().min(6),
-  role: z.enum(['AUTHOR', 'READER']).optional(),
+  name: z.string().regex(/^[a-zA-Z\s]+$/, 'Name can only contain alphabets and spaces'),
+  password: z.string()
+    .min(8)
+    .regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/, 'Password must contain uppercase, lowercase, number, and special character'),
+  role: z.enum(['AUTHOR', 'READER']),
 });
 
 const loginSchema = z.object({
@@ -25,7 +28,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      res.status(409).json(BaseResponse.error('User already exists'));
+      res.status(409).json(BaseResponse.error('User already exists', ['Email already in use']));
       return;
     }
 
@@ -35,7 +38,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
         email,
         name,
         password: hashedPassword,
-        role: role || 'READER',
+        role,
       },
     });
 
@@ -45,7 +48,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       res.status(400).json(BaseResponse.error('Validation Error', error.issues));
       return;
     }
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
 
@@ -65,14 +68,93 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
+    // Generate Access Token (15 minutes)
+    const accessToken = jwt.sign({ sub: user.id, email: user.email, role: user.role }, JWT_SECRET, { expiresIn: '15m' });
 
-    res.json(BaseResponse.success({ token }));
+    // Generate Refresh Token (7 days)
+    const refreshTokenString = crypto.randomBytes(40).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    await prisma.refreshToken.create({
+      data: {
+        token: refreshTokenString,
+        userId: user.id,
+        expiresAt,
+      },
+    });
+
+    res.cookie('refreshToken', refreshTokenString, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json(BaseResponse.success({ accessToken }));
   } catch (error: any) {
     if (error instanceof z.ZodError) {
       res.status(400).json(BaseResponse.error('Validation Error', error.issues));
       return;
     }
-    res.status(500).json(BaseResponse.error('Internal Server Error', error.message));
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
+  }
+};
+
+export const refresh = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const tokenStr = req.cookies.refreshToken;
+    if (!tokenStr) {
+      res.status(401).json(BaseResponse.error('No refresh token provided'));
+      return;
+    }
+
+    const refreshToken = await prisma.refreshToken.findUnique({
+      where: { token: tokenStr },
+      include: { user: true },
+    });
+
+    if (!refreshToken || refreshToken.expiresAt < new Date()) {
+      res.status(401).json(BaseResponse.error('Invalid or expired refresh token'));
+      return;
+    }
+
+    // Issue new pair
+    const accessToken = jwt.sign({ sub: refreshToken.user.id, email: refreshToken.user.email, role: refreshToken.user.role }, JWT_SECRET, { expiresIn: '15m' });
+    const newRefreshTokenString = crypto.randomBytes(40).toString('hex');
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7);
+
+    // Swap token in DB
+    await prisma.refreshToken.delete({ where: { id: refreshToken.id } });
+    await prisma.refreshToken.create({
+      data: {
+        token: newRefreshTokenString,
+        userId: refreshToken.user.id,
+        expiresAt,
+      },
+    });
+
+    res.cookie('refreshToken', newRefreshTokenString, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
+    res.json(BaseResponse.success({ accessToken }));
+  } catch (error: any) {
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
+  }
+};
+
+export const logout = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const tokenStr = req.cookies.refreshToken;
+    if (tokenStr) {
+      await prisma.refreshToken.deleteMany({ where: { token: tokenStr } });
+    }
+    res.clearCookie('refreshToken');
+    res.json(BaseResponse.success(null, 'Logged out successfully'));
+  } catch (error: any) {
+    res.status(500).json(BaseResponse.error('Internal Server Error'));
   }
 };
